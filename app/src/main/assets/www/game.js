@@ -1,7 +1,7 @@
 /**
  * 2D Penalty Shootout Game (Android Touch & Web)
  * Full Persian UI & Landscape Widescreen Support
- * Exact Visual Alignment + Intelligent Jumping Goalkeeper AI + Triple Audio Engine
+ * Bug-Free State Machine + Flawless Touch & Swipe without Highlights
  */
 
 (function() {
@@ -56,6 +56,8 @@
   let targetsHit = 0;
   let targetsTotal = 5;
   let isPlaying = false;
+  let roundTimeoutId = null;
+  let roundEndProcessed = false;
 
   highscoreDisplay.textContent = highscore;
 
@@ -83,7 +85,7 @@
   images.ball.src = 'assets/ball.png';
   images.ball.onload = onAssetLoad;
 
-  // Triple Audio System (Native Android Bridge + HTML5 Audio WAV + Web Audio API)
+  // Triple Audio System
   const soundFiles = {
     click: new Audio('assets/sounds/click.wav'),
     whistle: new Audio('assets/sounds/whistle.wav'),
@@ -112,7 +114,6 @@
   function playSound(type) {
     if (!soundEnabled) return;
 
-    // 1. Try Native Android Bridge first (0ms latency inside APK)
     if (window.AndroidBridge && typeof window.AndroidBridge.playSound === 'function') {
       try {
         window.AndroidBridge.playSound(type);
@@ -120,7 +121,6 @@
       } catch(e) {}
     }
 
-    // 2. Play HTML5 Audio WAV file
     if (soundFiles[type]) {
       try {
         soundFiles[type].currentTime = 0;
@@ -129,7 +129,6 @@
       } catch(e) {}
     }
 
-    // 3. Web Audio API synthesizer fallback
     initAudio();
     if (!audioCtx) return;
     const now = audioCtx.currentTime;
@@ -225,11 +224,10 @@
   window.addEventListener('resize', resizeCanvas);
   resizeCanvas();
 
-  // World Coordinates & Exact Alignment with field.png
   function getGoalRect() {
     const goalWidth = cw * 0.679;
     const goalHeight = ch * 0.300;
-    const goalCenterY = ch * 0.458; // Bottom goal line on grass
+    const goalCenterY = ch * 0.458;
     return {
       x: (cw - goalWidth) / 2,
       y: goalCenterY - goalHeight,
@@ -271,15 +269,15 @@
     powerIndicator.style.display = 'none';
   }
 
-  // Intelligent Jumping Goalkeeper Object (#1 Green Monster)
+  // Goalkeeper Object (#1 Green Monster)
   const goalie = {
-    x: 0,        // Horizontal offset from goal center
-    y: 0,        // Elevation above goal line
-    vx: 0,       // Horizontal jump speed
-    vy: 0,       // Vertical jump speed
+    x: 0,
+    y: 0,
+    vx: 0,
+    vy: 0,
     targetX: 0,
     targetY: 0,
-    state: 'IDLE', // IDLE, WAITING_REACTION, DIVING, CELEBRATING, DEJECTED
+    state: 'IDLE',
     timer: 0,
     rot: 0,
     scaleX: 1,
@@ -317,7 +315,16 @@
     });
   }
 
+  function clearRoundTimeout() {
+    if (roundTimeoutId) {
+      clearTimeout(roundTimeoutId);
+      roundTimeoutId = null;
+    }
+  }
+
   function initRound() {
+    clearRoundTimeout();
+    roundEndProcessed = false;
     resetBall();
     resetGoalie();
     centerBanner.classList.remove('show');
@@ -398,14 +405,23 @@
     ctx.restore();
   }
 
-  // Touch & Mouse Input Handling (Swipe Mechanics)
+  // Touch & Mouse Input Handling without Any System Highlights/Defaults
   let isDragging = false;
   let swipePath = [];
 
   function getPointerPos(e) {
     const rect = canvas.getBoundingClientRect();
-    const clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches && e.touches.length > 0 ? e.touches[0].clientY : e.clientY;
+    let clientX, clientY;
+    if (e.targetTouches && e.targetTouches.length > 0) {
+      clientX = e.targetTouches[0].clientX;
+      clientY = e.targetTouches[0].clientY;
+    } else if (e.changedTouches && e.changedTouches.length > 0) {
+      clientX = e.changedTouches[0].clientX;
+      clientY = e.changedTouches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
     return {
       x: (clientX - rect.left) * (cw / rect.width),
       y: (clientY - rect.top) * (ch / rect.height)
@@ -425,23 +441,26 @@
     return { x: screenX, y: screenY, shadowY: shadowY, scale: scale };
   }
 
-  canvas.addEventListener('pointerdown', function(e) {
+  function onTouchStart(e) {
+    if (e.cancelable) e.preventDefault();
     if (!isPlaying || ball.state !== 'IDLE') return;
     const pos = getPointerPos(e);
     const bPos = getBallScreenPos();
     const ballRadius = 65 * bPos.scale;
 
+    // Generous touch activation: near ball or anywhere on the lower 55% of the screen
     const dist = Math.hypot(pos.x - bPos.x, pos.y - bPos.y);
-    if (dist < ballRadius * 1.8) {
+    if (dist < ballRadius * 2.8 || pos.y > ch * 0.45) {
       isDragging = true;
       ball.state = 'AIMING';
       swipePath = [pos];
       powerIndicator.style.display = 'flex';
       powerVal.textContent = '۰٪';
     }
-  });
+  }
 
-  canvas.addEventListener('pointermove', function(e) {
+  function onTouchMove(e) {
+    if (e.cancelable) e.preventDefault();
     if (!isDragging || ball.state !== 'AIMING') return;
     const pos = getPointerPos(e);
     swipePath.push(pos);
@@ -454,14 +473,15 @@
     const dy = first.y - pos.y;
     const powerPercent = Math.min(100, Math.max(0, Math.round((dy / (ch * 0.45)) * 100)));
     powerVal.textContent = powerPercent + '٪';
-  });
+  }
 
-  function onPointerRelease(e) {
+  function onTouchEnd(e) {
+    if (e.cancelable) e.preventDefault();
     if (!isDragging || ball.state !== 'AIMING') return;
     isDragging = false;
     powerIndicator.style.display = 'none';
 
-    if (swipePath.length < 3) {
+    if (swipePath.length < 2) {
       ball.state = 'IDLE';
       return;
     }
@@ -469,15 +489,15 @@
     const first = swipePath[0];
     const last = swipePath[swipePath.length - 1];
     const dx = last.x - first.x;
-    const dy = first.y - last.y;
+    const dy = first.y - last.y; // Upward swipe distance
 
-    if (dy < 40) {
+    if (dy < 15) {
       ball.state = 'IDLE';
       return;
     }
 
     let totalCurvature = 0;
-    if (swipePath.length > 5) {
+    if (swipePath.length > 4) {
       for (let i = 1; i < swipePath.length - 1; i++) {
         const pt = swipePath[i];
         const t = (first.y - pt.y) / (first.y - last.y || 1);
@@ -499,45 +519,51 @@
     const bPos = getBallScreenPos();
     spawnGrassDust(bPos.x, bPos.y + 20);
 
-    // Enter reaction state for goalkeeper AI
     goalie.state = 'WAITING_REACTION';
     goalie.timer = 0;
   }
 
-  canvas.addEventListener('pointerup', onPointerRelease);
-  canvas.addEventListener('pointercancel', onPointerRelease);
-  canvas.addEventListener('pointerleave', onPointerRelease);
+  function onTouchCancel(e) {
+    if (e.cancelable) e.preventDefault();
+    if (isDragging && ball.state === 'AIMING') {
+      // If swipe was canceled by system right as user lifted, treat as release if enough upward motion
+      onTouchEnd(e);
+    }
+  }
+
+  // Register both pointer and touch events with { passive: false }
+  canvas.addEventListener('pointerdown', onTouchStart, { passive: false });
+  canvas.addEventListener('pointermove', onTouchMove, { passive: false });
+  canvas.addEventListener('pointerup', onTouchEnd, { passive: false });
+  canvas.addEventListener('pointercancel', onTouchCancel, { passive: false });
+  canvas.addEventListener('pointerleave', onTouchCancel, { passive: false });
+
+  canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+  canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+  canvas.addEventListener('touchend', onTouchEnd, { passive: false });
+  canvas.addEventListener('touchcancel', onTouchCancel, { passive: false });
 
   // Goalkeeper Intelligent Jumping & Reaction
   function updateGoalieAI() {
     if (goalie.state === 'WAITING_REACTION') {
       goalie.timer++;
-      
-      // Reaction delay based on difficulty so scoring is balanced and not too hard!
-      // Easy: 14 frames, Medium: 9 frames, Hard: 5 frames
       const reactionDelay = difficulty === 1 ? 14 : (difficulty === 2 ? 9 : 5);
       
       if (goalie.timer >= reactionDelay) {
         const gr = getGoalRect();
-        
-        // Predict exact ball arrival position at goal plane z = 1
-        const timeToGoal = max(1, (1.0 - ball.z) / (ball.vz || 0.03));
+        const timeToGoal = Math.max(1, (1.0 - ball.z) / (ball.vz || 0.03));
         let predX = ball.x + ball.vx * (timeToGoal * 0.6) + ball.curve * (timeToGoal * timeToGoal * 0.4);
         let predY = Math.max(0, Math.min(gr.h, ball.vy * 0.8));
 
-        // Apply intelligent jumping and dive parameters
         if (difficulty === 1) {
-          // Easy: Goalie jumps with moderate speed, sometimes misjudges curves or corner shots
           if (Math.random() < 0.38) {
-            predX *= -0.5; // Wrong side dive
+            predX *= -0.5;
           } else {
             predX += (Math.random() - 0.5) * 160;
           }
         } else if (difficulty === 2) {
-          // Medium: Professional dive, but corners (سه جاف) and curved shots score
           predX += (Math.random() - 0.5) * 65;
         } else {
-          // Hard: Fast acrobatic jump and dive right towards the ball
           predX += (Math.random() - 0.5) * 25;
         }
 
@@ -545,31 +571,26 @@
         goalie.targetY = predY;
         goalie.state = 'DIVING';
         
-        // Calculate dynamic jump velocities to make him actually leap off the ground!
         const diveFrames = Math.max(12, timeToGoal);
         goalie.vx = (predX - goalie.x) / (diveFrames * 0.85);
-        goalie.vy = Math.min(16, Math.max(6, (predY / 15) + 6)); // Vertical jump velocity upwards
+        goalie.vy = Math.min(16, Math.max(6, (predY / 15) + 6));
       }
     } 
     else if (goalie.state === 'DIVING') {
-      // Professional jumping and diving motion across X and Y
       goalie.x += goalie.vx;
       goalie.y += goalie.vy;
-      goalie.vy -= 0.65; // Gravity pulls the goalie back down towards grass
+      goalie.vy -= 0.65;
       if (goalie.y < 0) {
         goalie.y = 0;
         goalie.vy = 0;
       }
-      // Rotate body dynamically towards the dive direction
       goalie.rot = (goalie.vx / 18) * 0.45;
-      
-      // Dynamic stretching animation when reaching out to block
       goalie.scaleX = 1 + Math.min(0.2, Math.abs(goalie.vx) * 0.015);
       goalie.scaleY = 1 - Math.min(0.1, Math.abs(goalie.vx) * 0.008);
     } 
     else if (goalie.state === 'CELEBRATING') {
       goalie.timer++;
-      goalie.y = Math.abs(Math.sin(goalie.timer * 0.3)) * 25; // Happy bounce
+      goalie.y = Math.abs(Math.sin(goalie.timer * 0.3)) * 25;
       goalie.rot = Math.sin(goalie.timer * 0.2) * 0.15;
       goalie.scaleX = 1;
       goalie.scaleY = 1;
@@ -577,7 +598,7 @@
     else if (goalie.state === 'DEJECTED') {
       goalie.timer++;
       goalie.y = 0;
-      goalie.rot = Math.sin(goalie.timer * 0.1) * 0.05; // Shaking head in sadness
+      goalie.rot = Math.sin(goalie.timer * 0.1) * 0.05;
       goalie.scaleX = 1;
       goalie.scaleY = 1;
     } 
@@ -591,16 +612,10 @@
     }
   }
 
-  function Math_max(a, b) { return a > b ? a : b; }
-  function max(a, b) { return a > b ? a : b; }
-
   function showBanner(title, desc, type = 'goal') {
     bannerTitle.textContent = title;
     bannerDesc.textContent = desc;
     centerBanner.className = 'show ' + type;
-    setTimeout(() => {
-      centerBanner.classList.remove('show');
-    }, 2400);
   }
 
   function updateGame() {
@@ -617,28 +632,26 @@
       ball.x += ball.vx;
       ball.vx += ball.curve;
       ball.y += ball.vy;
-      ball.vy -= 0.6; // Gravity
+      ball.vy -= 0.6;
       if (ball.y < 0) {
         ball.y = 0;
         ball.vy = -ball.vy * 0.45;
       }
       ball.rot += 0.25;
 
-      // Check collision when crossing goal plane (z >= 0.94)
-      if (ball.z >= 0.94) {
+      if (ball.z >= 0.94 && !roundEndProcessed) {
+        roundEndProcessed = true;
         const gr = getGoalRect();
         const bScreen = getBallScreenPos();
 
         const goalieScreenX = gr.centerX + goalie.x;
-        // Goalie chest/hands in screen space during jump
         const goalieScreenY = gr.centerY - goalie.y - 70;
         const goalieHitDist = Math.hypot(bScreen.x - goalieScreenX, bScreen.y - goalieScreenY);
 
-        // Balanced reach based on difficulty: Easy=95px, Medium=115px, Hard=130px
         const blockRadius = difficulty === 1 ? 95 : (difficulty === 2 ? 115 : 130);
 
         if (goalieHitDist < blockRadius && bScreen.y < gr.centerY + 40) {
-          // SAVED BY GOALIE!
+          // SAVED BY GOALIE
           ball.state = 'RESULT';
           ball.vz = -0.016;
           ball.vx = (bScreen.x - goalieScreenX) * 0.2;
@@ -647,7 +660,6 @@
           goalie.timer = 0;
           playSound('save');
           showBanner('مهار شد! 🧤', 'دروازه‌بان با یک پرش و شیرجه عالی توپ را گرفت!', 'save');
-
           handleRoundEnd('save');
         } 
         else {
@@ -655,7 +667,7 @@
           const isInsideHeight = bScreen.y > gr.y + 15 && bScreen.y < gr.y + gr.h;
 
           if (isInsideWidth && isInsideHeight) {
-            // GOAL!!
+            // GOAL
             ball.state = 'RESULT';
             ball.vz = 0.005;
             ball.vy = -2;
@@ -676,10 +688,10 @@
               });
               targetsDisplay.textContent = `${targetsHit} / ${targetsTotal}`;
             }
-
             handleRoundEnd('goal');
           } 
           else {
+            // MISS
             ball.state = 'RESULT';
             goalie.state = 'IDLE';
             if (Math.abs(bScreen.x - gr.x) < 40 || Math.abs(bScreen.x - (gr.x + gr.w)) < 40) {
@@ -704,8 +716,11 @@
         ball.vx *= 0.85;
       }
       ball.timer++;
-      if (ball.timer > 120) {
-        initRound();
+      if (ball.timer > 125) {
+        // Automatically continue to next kick if round not ended by game over
+        if (roundEndProcessed && isPlaying && !roundTimeoutId) {
+          initRound();
+        }
       }
     }
     updateParticles();
@@ -727,7 +742,8 @@
         lives--;
         updateLivesDisplay();
         if (lives <= 0) {
-          setTimeout(showGameOver, 2200);
+          clearRoundTimeout();
+          roundTimeoutId = setTimeout(showGameOver, 1800);
           return;
         }
       }
@@ -736,13 +752,15 @@
     if (gameMode === 'tournament') {
       tournamentRound++;
       if (tournamentRound > tournamentMaxRounds) {
-        setTimeout(showGameOver, 2200);
+        clearRoundTimeout();
+        roundTimeoutId = setTimeout(showGameOver, 1800);
       } else {
         guideText.textContent = `ضربه ${tournamentRound} از ${tournamentMaxRounds} | برای شوت زدن انگشت را روی توپ کشیده و رها کنید`;
       }
     } else if (gameMode === 'target') {
       if (targetsHit >= targetsTotal) {
-        setTimeout(showGameOver, 2200);
+        clearRoundTimeout();
+        roundTimeoutId = setTimeout(showGameOver, 1800);
       }
     }
   }
@@ -759,7 +777,9 @@
   }
 
   function showGameOver() {
+    clearRoundTimeout();
     isPlaying = false;
+    centerBanner.classList.remove('show');
     document.getElementById('go-final-score').textContent = score;
     document.getElementById('go-final-goals').textContent = goals;
     document.getElementById('go-final-high').textContent = highscore;
@@ -788,7 +808,7 @@
   function drawGame() {
     ctx.clearRect(0, 0, cw, ch);
 
-    // 1. Draw Field Background (Exact 1536x1024 stadium view)
+    // 1. Draw Field Background
     if (images.field.complete && images.field.naturalWidth > 0) {
       ctx.drawImage(images.field, 0, 0, cw, ch);
     } else {
@@ -799,7 +819,7 @@
       ctx.fillRect(0, 0, cw, ch);
     }
 
-    // 2. Draw Golden Targets (Target Challenge Mode)
+    // 2. Draw Golden Targets
     if (gameMode === 'target') {
       targetsList.forEach(t => {
         if (!t.hit) {
@@ -824,12 +844,11 @@
       });
     }
 
-    // 3. Draw Goalkeeper (#1 Green Monster with exact natural aspect ratio 1231/719 = 1.712)
+    // 3. Draw Goalkeeper (#1 Green Monster)
     const gr = getGoalRect();
     const gScreenX = gr.centerX + goalie.x;
     const gWidth = (cw * 0.33) * goalie.scaleX;
     const gHeight = (gWidth / 1.712) * goalie.scaleY;
-    // When goalie.y rises during jump, his body elevates off the grass right towards the crossbar!
     const gScreenY = gr.centerY - gHeight + (ch * 0.02) - goalie.y;
 
     ctx.save();
@@ -843,11 +862,10 @@
     }
     ctx.restore();
 
-    // 4. Draw Ball Shadow & Ball Sprite (#1 Pixel Art Soccer Ball)
+    // 4. Draw Ball Shadow & Ball Sprite
     const bPos = getBallScreenPos();
     const bSize = (cw * 0.088) * bPos.scale;
 
-    // Shadow on grass under the ball
     ctx.save();
     ctx.beginPath();
     ctx.ellipse(bPos.x, bPos.shadowY, (bSize * 0.45), (bSize * 0.18), 0, 0, Math.PI * 2);
@@ -855,7 +873,6 @@
     ctx.fill();
     ctx.restore();
 
-    // Ball Sprite
     ctx.save();
     ctx.translate(bPos.x, bPos.y);
     ctx.rotate(ball.rot);
@@ -927,7 +944,9 @@
 
   btnStartGame.addEventListener('click', () => {
     playSound('whistle');
+    clearRoundTimeout();
     menuModal.classList.remove('active');
+    gameoverModal.classList.remove('active');
     isPlaying = true;
     score = 0;
     goals = 0;
@@ -960,18 +979,22 @@
 
   btnPlayAgain.addEventListener('click', () => {
     playSound('click');
+    clearRoundTimeout();
     gameoverModal.classList.remove('active');
     btnStartGame.click();
   });
 
   btnBackMenu.addEventListener('click', () => {
     playSound('click');
+    clearRoundTimeout();
+    isPlaying = false;
     gameoverModal.classList.remove('active');
     menuModal.classList.add('active');
   });
 
   btnHome.addEventListener('click', () => {
     playSound('click');
+    clearRoundTimeout();
     isPlaying = false;
     menuModal.classList.add('active');
   });
