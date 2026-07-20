@@ -1,7 +1,7 @@
 /**
  * 2D Penalty Shootout Game (Android Touch & Web)
  * Full Persian UI & Landscape Widescreen Support
- * Bug-Free State Machine + Flawless Touch & Swipe without Highlights
+ * Version 0.03 - Exact Aiming (Corners, Posts, Out) + Human Articulated Goalkeeper AI + Crying Facial Expressions
  */
 
 (function() {
@@ -74,7 +74,7 @@
   function onAssetLoad() {
     assetsLoaded++;
     if (assetsLoaded === totalAssets) {
-      console.log('All game assets loaded successfully.');
+      console.log('All game assets loaded successfully (v0.03).');
     }
   }
 
@@ -269,7 +269,7 @@
     powerIndicator.style.display = 'none';
   }
 
-  // Goalkeeper Object (#1 Green Monster)
+  // Goalkeeper Object (Human Articulated Kinematic Behavior + Facial States)
   const goalie = {
     x: 0,
     y: 0,
@@ -277,11 +277,12 @@
     vy: 0,
     targetX: 0,
     targetY: 0,
-    state: 'IDLE',
+    state: 'IDLE', // IDLE, WAITING_REACTION, DIVING, CELEBRATING, DEJECTED
     timer: 0,
     rot: 0,
     scaleX: 1,
-    scaleY: 1
+    scaleY: 1,
+    armReach: 0 // Articulated human arm extension factor during dive
   };
 
   function resetGoalie() {
@@ -296,6 +297,7 @@
     goalie.rot = 0;
     goalie.scaleX = 1;
     goalie.scaleY = 1;
+    goalie.armReach = 0;
   }
 
   // Targets for Target Challenge Mode
@@ -405,7 +407,7 @@
     ctx.restore();
   }
 
-  // Touch & Mouse Input Handling without Any System Highlights/Defaults
+  // Touch & Mouse Input Handling
   let isDragging = false;
   let swipePath = [];
 
@@ -448,7 +450,6 @@
     const bPos = getBallScreenPos();
     const ballRadius = 65 * bPos.scale;
 
-    // Generous touch activation: near ball or anywhere on the lower 55% of the screen
     const dist = Math.hypot(pos.x - bPos.x, pos.y - bPos.y);
     if (dist < ballRadius * 2.8 || pos.y > ch * 0.45) {
       isDragging = true;
@@ -496,6 +497,7 @@
       return;
     }
 
+    // Calculate curve from swipe trajectory curvature
     let totalCurvature = 0;
     if (swipePath.length > 4) {
       for (let i = 1; i < swipePath.length - 1; i++) {
@@ -507,11 +509,13 @@
       totalCurvature /= (swipePath.length - 2);
     }
 
-    const power = Math.min(1.0, Math.max(0.3, dy / (ch * 0.45)));
-    ball.vz = 0.022 + power * 0.025;
-    ball.vx = (dx / (cw * 0.5)) * 16;
-    ball.vy = power * 14;
-    ball.curve = (totalCurvature / cw) * 0.85;
+    // Exact aiming: scale swipe horizontal delta and upward power right to the corners, posts, and out!
+    // Multiplier 1.85 allows swiping smoothly from spot to the extreme corners (+-520px) or wide out (>+-550px)
+    const power = Math.min(1.0, Math.max(0.35, dy / (ch * 0.40)));
+    ball.vz = 0.022 + power * 0.025; // Reaches net in ~22 to 36 frames
+    ball.vx = (dx / (cw * 0.35)) * 18; // Wide aiming span across the entire stadium width!
+    ball.vy = power * 15;             // Elevation reaching up to top corner crossbar (307px) or over into stadium!
+    ball.curve = (totalCurvature / cw) * 0.95; // Spin Magnus curl
     ball.state = 'KICKED';
     ball.timer = 0;
 
@@ -526,12 +530,10 @@
   function onTouchCancel(e) {
     if (e.cancelable) e.preventDefault();
     if (isDragging && ball.state === 'AIMING') {
-      // If swipe was canceled by system right as user lifted, treat as release if enough upward motion
       onTouchEnd(e);
     }
   }
 
-  // Register both pointer and touch events with { passive: false }
   canvas.addEventListener('pointerdown', onTouchStart, { passive: false });
   canvas.addEventListener('pointermove', onTouchMove, { passive: false });
   canvas.addEventListener('pointerup', onTouchEnd, { passive: false });
@@ -543,7 +545,7 @@
   canvas.addEventListener('touchend', onTouchEnd, { passive: false });
   canvas.addEventListener('touchcancel', onTouchCancel, { passive: false });
 
-  // Goalkeeper Intelligent Jumping & Reaction
+  // Goalkeeper Kinematic & Human Articulated Motion
   function updateGoalieAI() {
     if (goalie.state === 'WAITING_REACTION') {
       goalie.timer++;
@@ -553,7 +555,7 @@
         const gr = getGoalRect();
         const timeToGoal = Math.max(1, (1.0 - ball.z) / (ball.vz || 0.03));
         let predX = ball.x + ball.vx * (timeToGoal * 0.6) + ball.curve * (timeToGoal * timeToGoal * 0.4);
-        let predY = Math.max(0, Math.min(gr.h, ball.vy * 0.8));
+        let predY = Math.max(0, Math.min(gr.h, ball.vy * 0.85));
 
         if (difficulty === 1) {
           if (Math.random() < 0.38) {
@@ -564,7 +566,7 @@
         } else if (difficulty === 2) {
           predX += (Math.random() - 0.5) * 65;
         } else {
-          predX += (Math.random() - 0.5) * 25;
+          predX += (Math.random() - 0.5) * 20;
         }
 
         goalie.targetX = predX;
@@ -573,34 +575,43 @@
         
         const diveFrames = Math.max(12, timeToGoal);
         goalie.vx = (predX - goalie.x) / (diveFrames * 0.85);
-        goalie.vy = Math.min(16, Math.max(6, (predY / 15) + 6));
+        goalie.vy = Math.min(18, Math.max(6, (predY / 14) + 6));
       }
     } 
     else if (goalie.state === 'DIVING') {
+      // Kinematic human diving physics: horizontal dive and vertical leap off the grass
       goalie.x += goalie.vx;
       goalie.y += goalie.vy;
-      goalie.vy -= 0.65;
+      goalie.vy -= 0.68; // Gravity pulls the goalkeeper back down towards the grass
       if (goalie.y < 0) {
         goalie.y = 0;
         goalie.vy = 0;
       }
-      goalie.rot = (goalie.vx / 18) * 0.45;
-      goalie.scaleX = 1 + Math.min(0.2, Math.abs(goalie.vx) * 0.015);
-      goalie.scaleY = 1 - Math.min(0.1, Math.abs(goalie.vx) * 0.008);
+      
+      // Articulated human dive posture: body tilts right into the dive vector
+      goalie.rot = (goalie.vx / 18) * 0.50;
+      
+      // Dynamic stretching of leading arm / body compression
+      goalie.armReach = Math.min(1.0, Math.hypot(goalie.vx, goalie.vy) / 15);
+      goalie.scaleX = 1 + (goalie.armReach * 0.18);
+      goalie.scaleY = 1 - (goalie.armReach * 0.08);
     } 
     else if (goalie.state === 'CELEBRATING') {
       goalie.timer++;
-      goalie.y = Math.abs(Math.sin(goalie.timer * 0.3)) * 25;
+      goalie.y = Math.abs(Math.sin(goalie.timer * 0.3)) * 28; // Triumphant happy bounces
       goalie.rot = Math.sin(goalie.timer * 0.2) * 0.15;
       goalie.scaleX = 1;
       goalie.scaleY = 1;
+      goalie.armReach = 0;
     } 
     else if (goalie.state === 'DEJECTED') {
+      // Conceded goal -> sitting/kneeling in sorrow, shaking head and crying tears!
       goalie.timer++;
       goalie.y = 0;
-      goalie.rot = Math.sin(goalie.timer * 0.1) * 0.05;
+      goalie.rot = Math.sin(goalie.timer * 0.1) * 0.06;
       goalie.scaleX = 1;
       goalie.scaleY = 1;
+      goalie.armReach = 0;
     } 
     else if (goalie.state === 'IDLE') {
       goalie.timer += 0.04;
@@ -609,6 +620,7 @@
       goalie.rot = 0;
       goalie.scaleX = 1;
       goalie.scaleY = 1;
+      goalie.armReach = 0;
     }
   }
 
@@ -639,6 +651,7 @@
       }
       ball.rot += 0.25;
 
+      // Check collision when crossing goal plane (z >= 0.94)
       if (ball.z >= 0.94 && !roundEndProcessed) {
         roundEndProcessed = true;
         const gr = getGoalRect();
@@ -650,10 +663,10 @@
 
         const blockRadius = difficulty === 1 ? 95 : (difficulty === 2 ? 115 : 130);
 
-        if (goalieHitDist < blockRadius && bScreen.y < gr.centerY + 40) {
+        if (goalieHitDist < blockRadius && bScreen.y < gr.centerY + 45) {
           // SAVED BY GOALIE
           ball.state = 'RESULT';
-          ball.vz = -0.016;
+          ball.vz = -0.018;
           ball.vx = (bScreen.x - goalieScreenX) * 0.2;
           ball.vy = 7;
           goalie.state = 'CELEBRATING';
@@ -663,18 +676,19 @@
           handleRoundEnd('save');
         } 
         else {
-          const isInsideWidth = bScreen.x > gr.x + 35 && bScreen.x < gr.x + gr.w - 35;
-          const isInsideHeight = bScreen.y > gr.y + 15 && bScreen.y < gr.y + gr.h;
+          // Check if ball is inside the goal posts width & height
+          const isInsideWidth = bScreen.x > gr.x + 30 && bScreen.x < gr.x + gr.w - 30;
+          const isInsideHeight = bScreen.y > gr.y + 12 && bScreen.y < gr.y + gr.h;
 
           if (isInsideWidth && isInsideHeight) {
-            // GOAL
+            // GOAL!!
             ball.state = 'RESULT';
             ball.vz = 0.005;
             ball.vy = -2;
             goalie.state = 'DEJECTED';
             goalie.timer = 0;
             playSound('goal');
-            spawnConfetti(bScreen.x, bScreen.y, 60);
+            spawnConfetti(bScreen.x, bScreen.y, 65);
             showBanner('گلل!! ⚽🔥', 'یک شوت بی‌نقص و حرفه‌ای به تور نشست!', 'goal');
 
             if (gameMode === 'target') {
@@ -691,16 +705,19 @@
             handleRoundEnd('goal');
           } 
           else {
-            // MISS
+            // MISS / POST / OUT
             ball.state = 'RESULT';
             goalie.state = 'IDLE';
-            if (Math.abs(bScreen.x - gr.x) < 40 || Math.abs(bScreen.x - (gr.x + gr.w)) < 40) {
+            if (Math.abs(bScreen.x - gr.x) < 38 || Math.abs(bScreen.x - (gr.x + gr.w)) < 38) {
               playSound('save');
-              ball.vx = -ball.vx * 0.8;
-              showBanner('تیرک دروازه! 💥', 'توپ با اختلاف میلی‌متری به تیرک خورد!', 'save');
+              ball.vx = -ball.vx * 0.85;
+              showBanner('تیرک دروازه! 💥', 'توپ با ضربه شدید به تیرک خورد و برگشت!', 'save');
+            } else if (bScreen.x < gr.x - 40 || bScreen.x > gr.x + gr.w + 40) {
+              playSound('miss');
+              showBanner('اوت / بیرون رفت! ❌', 'ضربه به گوشه بیرون دروازه یا جایگاه رفت.', 'save');
             } else {
               playSound('miss');
-              showBanner('بیرون رفت! ❌', 'ضربه از کنار دروازه به بیرون رفت.', 'save');
+              showBanner('بیرون رفت! ❌', 'ضربه با اختلاف از بالای تیرک دروازه به بیرون رفت.', 'save');
             }
             handleRoundEnd('miss');
           }
@@ -717,7 +734,6 @@
       }
       ball.timer++;
       if (ball.timer > 125) {
-        // Automatically continue to next kick if round not ended by game over
         if (roundEndProcessed && isPlaying && !roundTimeoutId) {
           initRound();
         }
@@ -844,7 +860,7 @@
       });
     }
 
-    // 3. Draw Goalkeeper (#1 Green Monster)
+    // 3. Draw Goalkeeper (#1 Green Monster with 100% Solid Body + Human Articulated Motion + Facial Expressions)
     const gr = getGoalRect();
     const gScreenX = gr.centerX + goalie.x;
     const gWidth = (cw * 0.33) * goalie.scaleX;
@@ -860,6 +876,55 @@
       ctx.fillStyle = '#3fb950';
       ctx.fillRect(-gWidth / 2, -gHeight / 2, gWidth, gHeight);
     }
+
+    // Dynamic Facial Transformations (Crying Tears / Sad Face when Conceded vs Happy Sparkles when Saved)
+    if (goalie.state === 'DEJECTED') {
+      // Draw Animated Streaming Blue Tears & Crying Frown (`تغییر چهره و گریه زمان گل خوردن`)
+      ctx.save();
+      ctx.translate(0, -gHeight * 0.12); // Position right over his face/eyes
+      
+      // Downturned sad eyebrows
+      ctx.strokeStyle = '#0d1117';
+      ctx.lineWidth = 6;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-35, -25); ctx.lineTo(-12, -18);
+      ctx.moveTo(35, -25); ctx.lineTo(12, -18);
+      ctx.stroke();
+
+      // Sad frowning mouth
+      ctx.beginPath();
+      ctx.arc(0, 15, 18, Math.PI, Math.PI * 2, false);
+      ctx.stroke();
+
+      // Streaming Tear Drops (💧 💧) flowing down cheeks
+      const tearY = (goalie.timer * 4.5) % 65;
+      ctx.fillStyle = '#58a6ff';
+      ctx.shadowColor = '#1f6feb';
+      ctx.shadowBlur = 10;
+      for (let side of [-24, 24]) {
+        ctx.beginPath();
+        ctx.arc(side, -5 + tearY, 7, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(side, -5 + ((tearY + 32) % 65), 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    } 
+    else if (goalie.state === 'CELEBRATING') {
+      // Happy celebrating facial transformation (`تغییر چهره شاد و ستاره‌های پیروزی`)
+      ctx.save();
+      ctx.translate(0, -gHeight * 0.15);
+      const starAngle = goalie.timer * 0.18;
+      ctx.fillStyle = '#f2cc60';
+      ctx.font = 'bold 26px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('✨', Math.cos(starAngle) * 55, Math.sin(starAngle) * 20 - 25);
+      ctx.fillText('✨', Math.cos(starAngle + Math.PI) * 55, Math.sin(starAngle + Math.PI) * 20 - 25);
+      ctx.restore();
+    }
+
     ctx.restore();
 
     // 4. Draw Ball Shadow & Ball Sprite

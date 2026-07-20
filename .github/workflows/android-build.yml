@@ -26,19 +26,19 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build Debug APK with Gradle
+      - name: Build Debug APK with Fixed Keystore
         run: ./gradlew assembleDebug --stacktrace
 
-      - name: Rename APK for Clarity
+      - name: Rename APK with Version Display
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/Penalty-Game-v1.0.apk
+          cp app/build/outputs/apk/debug/app-debug.apk dist/Penalty-Game-v0.03.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: Penalty-Game-Android-APK
-          path: dist/Penalty-Game-v1.0.apk
+          path: dist/Penalty-Game-v0.03.apk
           if-no-files-found: error
 
   build-web:

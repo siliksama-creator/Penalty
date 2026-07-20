@@ -11,15 +11,28 @@ android {
         applicationId "com.siliksama.penalty"
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName "1.0"
+        versionCode 3
+        versionName "0.03"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        fixedKeystore {
+            storeFile file('keystore/penalty.keystore')
+            storePassword 'penaltygame'
+            keyAlias 'penalty'
+            keyPassword 'penaltygame'
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig signingConfigs.fixedKeystore
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.fixedKeystore
         }
     }
     compileOptions {
