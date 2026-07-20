@@ -1,7 +1,7 @@
 /**
  * 2D Penalty Shootout Game (Android Touch & Web)
  * Full Persian UI & Landscape Widescreen Support
- * Exact Visual Alignment with Uploaded Assets (field, goalkeeper #1, ball)
+ * Exact Visual Alignment + Intelligent Jumping Goalkeeper AI + Triple Audio Engine
  */
 
 (function() {
@@ -83,7 +83,16 @@
   images.ball.src = 'assets/ball.png';
   images.ball.onload = onAssetLoad;
 
-  // Web Audio Synthesizer Engine
+  // Triple Audio System (Native Android Bridge + HTML5 Audio WAV + Web Audio API)
+  const soundFiles = {
+    click: new Audio('assets/sounds/click.wav'),
+    whistle: new Audio('assets/sounds/whistle.wav'),
+    kick: new Audio('assets/sounds/kick.wav'),
+    goal: new Audio('assets/sounds/goal.wav'),
+    save: new Audio('assets/sounds/save.wav'),
+    miss: new Audio('assets/sounds/save.wav')
+  };
+
   const AudioContext = window.AudioContext || window.webkitAudioContext;
   let audioCtx = null;
 
@@ -92,7 +101,7 @@
       try {
         audioCtx = new AudioContext();
       } catch (e) {
-        console.warn('AudioContext not supported or blocked');
+        console.warn('AudioContext fallback not available');
       }
     }
     if (audioCtx && audioCtx.state === 'suspended') {
@@ -102,9 +111,27 @@
 
   function playSound(type) {
     if (!soundEnabled) return;
+
+    // 1. Try Native Android Bridge first (0ms latency inside APK)
+    if (window.AndroidBridge && typeof window.AndroidBridge.playSound === 'function') {
+      try {
+        window.AndroidBridge.playSound(type);
+        return;
+      } catch(e) {}
+    }
+
+    // 2. Play HTML5 Audio WAV file
+    if (soundFiles[type]) {
+      try {
+        soundFiles[type].currentTime = 0;
+        soundFiles[type].play();
+        return;
+      } catch(e) {}
+    }
+
+    // 3. Web Audio API synthesizer fallback
     initAudio();
     if (!audioCtx) return;
-
     const now = audioCtx.currentTime;
 
     if (type === 'click') {
@@ -149,7 +176,7 @@
       osc.stop(now + 0.15);
     } 
     else if (type === 'goal') {
-      const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+      const notes = [523.25, 659.25, 783.99, 1046.50];
       notes.forEach((freq, idx) => {
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
@@ -198,16 +225,11 @@
   window.addEventListener('resize', resizeCanvas);
   resizeCanvas();
 
-  // World Coordinates & Geometry (Exact Visual Alignment with field.png)
-  // In field.png (1536x1024):
-  // Top crossbar sits at y = 0.158 * ch (162px)
-  // Left post is at x = 0.158 * cw (243px), Right post at x = 0.837 * cw (1286px)
-  // Goal width is 0.679 * cw (1043px), height is 0.300 * ch (307px)
-  // Bottom goal line where posts hit grass is at y = 0.458 * ch (469px)
+  // World Coordinates & Exact Alignment with field.png
   function getGoalRect() {
     const goalWidth = cw * 0.679;
     const goalHeight = ch * 0.300;
-    const goalCenterY = ch * 0.458; // Goal line on grass
+    const goalCenterY = ch * 0.458; // Bottom goal line on grass
     return {
       x: (cw - goalWidth) / 2,
       y: goalCenterY - goalHeight,
@@ -220,15 +242,15 @@
 
   // Ball Object
   const ball = {
-    x: 0,        // Horizontal offset from screen center (-cw/2 to +cw/2)
-    y: 0,        // Elevation above grass
-    z: 0,        // Depth from penalty spot (z=0) to goal line plane (z=1)
-    vx: 0,       // X velocity
-    vy: 0,       // Y elevation velocity
-    vz: 0,       // Z forward velocity
-    curve: 0,    // Spin/magnus curve acceleration
-    rot: 0,      // Rotation angle for visual spin
-    scale: 1,    // Visual scale factor based on Z
+    x: 0,
+    y: 0,
+    z: 0,
+    vx: 0,
+    vy: 0,
+    vz: 0,
+    curve: 0,
+    rot: 0,
+    scale: 1,
     state: 'IDLE', // IDLE, AIMING, KICKED, RESULT, RESETTING
     timer: 0
   };
@@ -249,28 +271,33 @@
     powerIndicator.style.display = 'none';
   }
 
-  // Goalkeeper Object (#1 Green Monster)
+  // Intelligent Jumping Goalkeeper Object (#1 Green Monster)
   const goalie = {
     x: 0,        // Horizontal offset from goal center
-    y: 0,        // Vertical offset from goal floor
-    targetX: 0,  // Target dive location
+    y: 0,        // Elevation above goal line
+    vx: 0,       // Horizontal jump speed
+    vy: 0,       // Vertical jump speed
+    targetX: 0,
     targetY: 0,
-    state: 'IDLE', // IDLE, DIVING, CELEBRATING, DEJECTED
+    state: 'IDLE', // IDLE, WAITING_REACTION, DIVING, CELEBRATING, DEJECTED
     timer: 0,
-    diveSpeed: 0.08,
     rot: 0,
-    scale: 1
+    scaleX: 1,
+    scaleY: 1
   };
 
   function resetGoalie() {
     goalie.x = 0;
     goalie.y = 0;
+    goalie.vx = 0;
+    goalie.vy = 0;
     goalie.targetX = 0;
     goalie.targetY = 0;
     goalie.state = 'IDLE';
     goalie.timer = 0;
     goalie.rot = 0;
-    goalie.scale = 1;
+    goalie.scaleX = 1;
+    goalie.scaleY = 1;
   }
 
   // Targets for Target Challenge Mode
@@ -387,11 +414,10 @@
 
   function getBallScreenPos() {
     const gr = getGoalRect();
-    const spotY = ch * 0.82; // Penalty spot Y on screen
+    const spotY = ch * 0.82;
     const currentZ = ball.z;
     const scale = 1.0 - currentZ * 0.65;
     
-    // As z goes 0 to 1, screen Y moves from spotY up to goalCenterY
     const screenY = spotY - (spotY - gr.centerY) * currentZ - ball.y;
     const screenX = cw / 2 + ball.x * scale;
     const shadowY = spotY - (spotY - gr.centerY) * currentZ;
@@ -443,7 +469,7 @@
     const first = swipePath[0];
     const last = swipePath[swipePath.length - 1];
     const dx = last.x - first.x;
-    const dy = first.y - last.y; // Upward distance
+    const dy = first.y - last.y;
 
     if (dy < 40) {
       ball.state = 'IDLE';
@@ -473,41 +499,100 @@
     const bPos = getBallScreenPos();
     spawnGrassDust(bPos.x, bPos.y + 20);
 
-    triggerGoalieAI();
+    // Enter reaction state for goalkeeper AI
+    goalie.state = 'WAITING_REACTION';
+    goalie.timer = 0;
   }
 
   canvas.addEventListener('pointerup', onPointerRelease);
   canvas.addEventListener('pointercancel', onPointerRelease);
   canvas.addEventListener('pointerleave', onPointerRelease);
 
-  // Goalkeeper AI Logic
-  function triggerGoalieAI() {
-    const gr = getGoalRect();
-    
-    const timeToGoal = (1.0 - ball.z) / (ball.vz || 0.03);
-    let predictedX = ball.x + ball.vx * (timeToGoal * 0.6) + ball.curve * (timeToGoal * timeToGoal * 0.4);
-    let predictedY = Math.max(0, Math.min(gr.h, ball.vy * 0.8));
+  // Goalkeeper Intelligent Jumping & Reaction
+  function updateGoalieAI() {
+    if (goalie.state === 'WAITING_REACTION') {
+      goalie.timer++;
+      
+      // Reaction delay based on difficulty so scoring is balanced and not too hard!
+      // Easy: 14 frames, Medium: 9 frames, Hard: 5 frames
+      const reactionDelay = difficulty === 1 ? 14 : (difficulty === 2 ? 9 : 5);
+      
+      if (goalie.timer >= reactionDelay) {
+        const gr = getGoalRect();
+        
+        // Predict exact ball arrival position at goal plane z = 1
+        const timeToGoal = max(1, (1.0 - ball.z) / (ball.vz || 0.03));
+        let predX = ball.x + ball.vx * (timeToGoal * 0.6) + ball.curve * (timeToGoal * timeToGoal * 0.4);
+        let predY = Math.max(0, Math.min(gr.h, ball.vy * 0.8));
 
-    if (difficulty === 1) {
-      goalie.diveSpeed = 0.06;
-      if (Math.random() < 0.45) {
-        predictedX *= -0.7;
-      } else {
-        predictedX += (Math.random() - 0.5) * 180;
+        // Apply intelligent jumping and dive parameters
+        if (difficulty === 1) {
+          // Easy: Goalie jumps with moderate speed, sometimes misjudges curves or corner shots
+          if (Math.random() < 0.38) {
+            predX *= -0.5; // Wrong side dive
+          } else {
+            predX += (Math.random() - 0.5) * 160;
+          }
+        } else if (difficulty === 2) {
+          // Medium: Professional dive, but corners (سه جاف) and curved shots score
+          predX += (Math.random() - 0.5) * 65;
+        } else {
+          // Hard: Fast acrobatic jump and dive right towards the ball
+          predX += (Math.random() - 0.5) * 25;
+        }
+
+        goalie.targetX = predX;
+        goalie.targetY = predY;
+        goalie.state = 'DIVING';
+        
+        // Calculate dynamic jump velocities to make him actually leap off the ground!
+        const diveFrames = Math.max(12, timeToGoal);
+        goalie.vx = (predX - goalie.x) / (diveFrames * 0.85);
+        goalie.vy = Math.min(16, Math.max(6, (predY / 15) + 6)); // Vertical jump velocity upwards
       }
-    } else if (difficulty === 2) {
-      goalie.diveSpeed = 0.085;
-      predictedX += (Math.random() - 0.5) * 80;
-    } else {
-      goalie.diveSpeed = 0.11;
-      predictedX += (Math.random() - 0.5) * 35;
+    } 
+    else if (goalie.state === 'DIVING') {
+      // Professional jumping and diving motion across X and Y
+      goalie.x += goalie.vx;
+      goalie.y += goalie.vy;
+      goalie.vy -= 0.65; // Gravity pulls the goalie back down towards grass
+      if (goalie.y < 0) {
+        goalie.y = 0;
+        goalie.vy = 0;
+      }
+      // Rotate body dynamically towards the dive direction
+      goalie.rot = (goalie.vx / 18) * 0.45;
+      
+      // Dynamic stretching animation when reaching out to block
+      goalie.scaleX = 1 + Math.min(0.2, Math.abs(goalie.vx) * 0.015);
+      goalie.scaleY = 1 - Math.min(0.1, Math.abs(goalie.vx) * 0.008);
+    } 
+    else if (goalie.state === 'CELEBRATING') {
+      goalie.timer++;
+      goalie.y = Math.abs(Math.sin(goalie.timer * 0.3)) * 25; // Happy bounce
+      goalie.rot = Math.sin(goalie.timer * 0.2) * 0.15;
+      goalie.scaleX = 1;
+      goalie.scaleY = 1;
+    } 
+    else if (goalie.state === 'DEJECTED') {
+      goalie.timer++;
+      goalie.y = 0;
+      goalie.rot = Math.sin(goalie.timer * 0.1) * 0.05; // Shaking head in sadness
+      goalie.scaleX = 1;
+      goalie.scaleY = 1;
+    } 
+    else if (goalie.state === 'IDLE') {
+      goalie.timer += 0.04;
+      goalie.x = Math.sin(goalie.timer) * 18;
+      goalie.y = Math.abs(Math.sin(goalie.timer * 2)) * 6;
+      goalie.rot = 0;
+      goalie.scaleX = 1;
+      goalie.scaleY = 1;
     }
-
-    goalie.targetX = predictedX;
-    goalie.targetY = predictedY;
-    goalie.state = 'DIVING';
-    goalie.timer = 0;
   }
+
+  function Math_max(a, b) { return a > b ? a : b; }
+  function max(a, b) { return a > b ? a : b; }
 
   function showBanner(title, desc, type = 'goal') {
     bannerTitle.textContent = title;
@@ -525,6 +610,8 @@
       t.pulse += 0.08;
     });
 
+    updateGoalieAI();
+
     if (ball.state === 'KICKED') {
       ball.z += ball.vz;
       ball.x += ball.vx;
@@ -537,32 +624,29 @@
       }
       ball.rot += 0.25;
 
-      if (goalie.state === 'DIVING') {
-        goalie.x += (goalie.targetX - goalie.x) * goalie.diveSpeed;
-        goalie.y += (goalie.targetY - goalie.y) * goalie.diveSpeed;
-        goalie.rot = (goalie.x / (cw * 0.2)) * 0.4;
-      }
-
       // Check collision when crossing goal plane (z >= 0.94)
       if (ball.z >= 0.94) {
         const gr = getGoalRect();
         const bScreen = getBallScreenPos();
 
         const goalieScreenX = gr.centerX + goalie.x;
-        const goalieScreenY = gr.centerY - goalie.y - 65;
+        // Goalie chest/hands in screen space during jump
+        const goalieScreenY = gr.centerY - goalie.y - 70;
         const goalieHitDist = Math.hypot(bScreen.x - goalieScreenX, bScreen.y - goalieScreenY);
 
-        const blockRadius = 135; // Generous reach for monster goalie arms
+        // Balanced reach based on difficulty: Easy=95px, Medium=115px, Hard=130px
+        const blockRadius = difficulty === 1 ? 95 : (difficulty === 2 ? 115 : 130);
 
-        if (goalieHitDist < blockRadius && bScreen.y < gr.centerY + 30) {
+        if (goalieHitDist < blockRadius && bScreen.y < gr.centerY + 40) {
           // SAVED BY GOALIE!
           ball.state = 'RESULT';
-          ball.vz = -0.015;
-          ball.vx = (bScreen.x - goalieScreenX) * 0.15;
-          ball.vy = 6;
+          ball.vz = -0.016;
+          ball.vx = (bScreen.x - goalieScreenX) * 0.2;
+          ball.vy = 7;
           goalie.state = 'CELEBRATING';
+          goalie.timer = 0;
           playSound('save');
-          showBanner('مهار شد! 🧤', 'دروازه‌بان غول‌پیکر با واکنش عالی توپ را گرفت!', 'save');
+          showBanner('مهار شد! 🧤', 'دروازه‌بان با یک پرش و شیرجه عالی توپ را گرفت!', 'save');
 
           handleRoundEnd('save');
         } 
@@ -576,9 +660,10 @@
             ball.vz = 0.005;
             ball.vy = -2;
             goalie.state = 'DEJECTED';
+            goalie.timer = 0;
             playSound('goal');
             spawnConfetti(bScreen.x, bScreen.y, 60);
-            showBanner('گلل!! ⚽🔥', 'یک شوت بی‌نقص و تماشایی به تور نشست!', 'goal');
+            showBanner('گلل!! ⚽🔥', 'یک شوت بی‌نقص و حرفه‌ای به تور نشست!', 'goal');
 
             if (gameMode === 'target') {
               targetsList.forEach(t => {
@@ -596,13 +681,14 @@
           } 
           else {
             ball.state = 'RESULT';
+            goalie.state = 'IDLE';
             if (Math.abs(bScreen.x - gr.x) < 40 || Math.abs(bScreen.x - (gr.x + gr.w)) < 40) {
               playSound('save');
               ball.vx = -ball.vx * 0.8;
               showBanner('تیرک دروازه! 💥', 'توپ با اختلاف میلی‌متری به تیرک خورد!', 'save');
             } else {
               playSound('miss');
-              showBanner('بیرون رفت! ❌', 'ضربه با اختلاف از کنار دروازه به بیرون رفت.', 'save');
+              showBanner('بیرون رفت! ❌', 'ضربه از کنار دروازه به بیرون رفت.', 'save');
             }
             handleRoundEnd('miss');
           }
@@ -621,13 +707,7 @@
       if (ball.timer > 120) {
         initRound();
       }
-    } 
-    else if (ball.state === 'IDLE') {
-      goalie.timer += 0.04;
-      goalie.x = Math.sin(goalie.timer) * 18;
-      goalie.y = Math.abs(Math.sin(goalie.timer * 2)) * 6;
     }
-
     updateParticles();
   }
 
@@ -698,7 +778,7 @@
       document.getElementById('go-subtitle').textContent = `شما موفق شدید ${targetsHit} هدف طلایی را منهدم کنید!`;
     } else {
       document.getElementById('go-title').textContent = 'پایان رکوردزنی! 🔥';
-      document.getElementById('go-subtitle').textContent = `شما قبل از اتمام جان‌ها موفق به ثبت ${goals} گل شدید!`;
+      document.getElementById('go-subtitle').textContent = `شما قبل از اتمام جان‌ها موفق به ثبت ${goals} گل گردیدید!`;
     }
 
     gameoverModal.classList.add('active');
@@ -729,7 +809,7 @@
           ctx.scale(scale, scale);
           ctx.beginPath();
           ctx.arc(0, 0, t.radius, 0, Math.PI * 2);
-          ctx.fillStyle = 'rgba(242, 204, 96, 0.85)';
+          ctx.fillStyle = 'rgba(242, 204, 96, 0.88)';
           ctx.fill();
           ctx.lineWidth = 4;
           ctx.strokeStyle = '#ffffff';
@@ -744,12 +824,13 @@
       });
     }
 
-    // 3. Draw Goalkeeper (#1 Monster Goalie with Exact Natural Aspect Ratio 1224/713 = 1.716)
+    // 3. Draw Goalkeeper (#1 Green Monster with exact natural aspect ratio 1231/719 = 1.712)
     const gr = getGoalRect();
     const gScreenX = gr.centerX + goalie.x;
-    const gWidth = cw * 0.33;      // Exact visual span across goal width
-    const gHeight = gWidth / 1.716; // Exact proportion (1224x713) so character is never distorted!
-    const gScreenY = gr.centerY - gHeight + (ch * 0.02); // Feet resting right on the goal line grass
+    const gWidth = (cw * 0.33) * goalie.scaleX;
+    const gHeight = (gWidth / 1.712) * goalie.scaleY;
+    // When goalie.y rises during jump, his body elevates off the grass right towards the crossbar!
+    const gScreenY = gr.centerY - gHeight + (ch * 0.02) - goalie.y;
 
     ctx.save();
     ctx.translate(gScreenX, gScreenY + gHeight / 2);
@@ -802,7 +883,7 @@
       ctx.lineWidth = 8;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      ctx.strokeStyle = 'rgba(88, 166, 255, 0.85)';
+      ctx.strokeStyle = 'rgba(88, 166, 255, 0.88)';
       ctx.shadowColor = '#58a6ff';
       ctx.shadowBlur = 15;
       ctx.stroke();
@@ -860,7 +941,7 @@
     if (gameMode === 'endless') {
       livesBox.style.display = 'flex';
       targetsBox.style.display = 'none';
-      guideText.textContent = 'برای شوت زدن، انگشت (یا ماوس) را روی توپ گذاشته و به سمت دروازه بکشید (با حرکت کات دار!)';
+      guideText.textContent = 'برای شوت زدن، انگشت (یا ماوس) را روی توپ گذاشته و به سمت دروازه بکشید (با حرکت کات‌دار!)';
     } else if (gameMode === 'tournament') {
       livesBox.style.display = 'none';
       targetsBox.style.display = 'none';

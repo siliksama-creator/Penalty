@@ -24,9 +24,9 @@
         <div id="lives-box" class="stat-box">
           <span class="stat-label">جان‌ها:</span>
           <div class="lives-container" id="lives-display">
-            <span class="life-heart">❤️</span>
-            <span class="life-heart">❤️</span>
-            <span class="life-heart">❤️</span>
+            <span class="life-heart" title="فرصت اول">⚽</span>
+            <span class="life-heart" title="فرصت دوم">⚽</span>
+            <span class="life-heart" title="فرصت سوم">⚽</span>
           </div>
         </div>
 
@@ -74,14 +74,14 @@
     <div id="menu-modal" class="modal-overlay active">
       <div class="modal-card">
         <h2 class="modal-title">⚽ چالش پنالتی زدن (تاچ اندروید) ⚽</h2>
-        <p class="modal-subtitle">حالت بازی مورد نظر و سطح دشواری دروازه‌بان را انتخاب کنید</p>
+        <p class="modal-subtitle">حالت مسابقه و سطح دشواری و هوش مصنوعی دروازه‌بان را انتخاب کنید</p>
 
         <!-- Mode Selection -->
         <div class="modes-grid">
           <div class="mode-card selected" data-mode="endless">
             <span class="mode-icon">🔥</span>
             <span class="mode-name">رکوردزنی</span>
-            <span class="mode-desc">۳ فرصت مهار، تا می‌توانید گل بزنید!</span>
+            <span class="mode-desc">۳ فرصت مهار (⚽⚽⚽)، تا می‌توانید گل بزنید!</span>
           </div>
           <div class="mode-card" data-mode="tournament">
             <span class="mode-icon">🏆</span>
@@ -97,14 +97,14 @@
 
         <!-- Difficulty Selection -->
         <div class="difficulty-selector">
-          <span style="align-self: center; font-size: 14px; color: #8b949e; margin-left: 8px;">دشواری دروازه‌بان:</span>
-          <button class="diff-btn active" data-diff="1">آسان (تاخیر نرمال)</button>
+          <span style="font-size: clamp(11px, 2vh, 13px); color: #8b949e; font-weight: bold;">هوش مصنوعی دروازه‌بان:</span>
+          <button class="diff-btn active" data-diff="1">آسان (تاخیر واکنشی)</button>
           <button class="diff-btn" data-diff="2">متوسط (حرفه‌ای)</button>
           <button class="diff-btn" data-diff="3">سخت (واکنش سریع)</button>
         </div>
 
         <button id="btn-start-game" class="btn-primary">شروع مسابقه 🚀</button>
-        <button id="btn-show-help" class="btn-secondary">آموزش و نحوه شوت‌زنی</button>
+        <button id="btn-show-help" class="btn-secondary">آموزش و نحوه کات دادن شوت</button>
       </div>
     </div>
 
@@ -112,18 +112,18 @@
     <div id="gameover-modal" class="modal-overlay">
       <div class="modal-card">
         <h2 id="go-title" class="modal-title">پایان مسابقه! 🏁</h2>
-        <p id="go-subtitle" class="modal-subtitle">عملکرد شما در این دور</p>
+        <p id="go-subtitle" class="modal-subtitle">خلاصه عملکرد شما در این مسابقه</p>
 
-        <div style="background: #0d1117; border-radius: 12px; padding: 15px; margin-bottom: 20px;">
-          <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 16px;">
+        <div style="background: rgba(13, 17, 23, 0.85); border-radius: 12px; padding: clamp(10px, 2vh, 16px); margin-bottom: clamp(14px, 2.5vh, 20px);">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: clamp(14px, 2.3vh, 16px);">
             <span>امتیاز نهایی:</span>
             <strong id="go-final-score" style="color: #58a6ff;">۰</strong>
           </div>
-          <div style="display: flex; justify-content: space-between; margin-bottom: 10px; font-size: 16px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: clamp(14px, 2.3vh, 16px);">
             <span>تعداد گل‌ها:</span>
             <strong id="go-final-goals" style="color: #3fb950;">۰</strong>
           </div>
-          <div style="display: flex; justify-content: space-between; font-size: 16px;">
+          <div style="display: flex; justify-content: space-between; font-size: clamp(14px, 2.3vh, 16px);">
             <span>بهترین رکورد:</span>
             <strong id="go-final-high" style="color: #f2cc60;">۰</strong>
           </div>
@@ -142,7 +142,7 @@
           <li><strong>👆 لمس و کشیدن (Swipe):</strong> انگشت خود را روی توپ قرار داده و به سمت هر گوشه‌ای از دروازه که می‌خواهید بکشید و رها کنید.</li>
           <li><strong>⚡ تنظیم قدرت:</strong> هرچه انگشت خود را سریع‌تر و طولانی‌تر بکشید، شوت شما قدرتمندتر خواهد بود.</li>
           <li><strong>🌀 کات دادن (Curve):</strong> اگر مسیر کشیدن انگشت شما منحنی باشد (به چپ یا راست خم شود)، توپ در هوا چرخیده و کات می‌گیرد! این کار بهترین راه برای فریب دادن دروازه‌بان است.</li>
-          <li><strong>🧤 هوش مصنوعی دروازه‌بان:</strong> دروازه‌بان با توجه به سطح دشواری و جهت اولیه شوت واکنش نشان می‌دهد. اگر توپ کات زیادی داشته باشد یا به گوشه‌ها (سه جاف) برود، مهار آن برای دروازه‌بان بسیار سخت‌تر است.</li>
+          <li><strong>🧤 هوش مصنوعی دروازه‌بان:</strong> دروازه‌بان به طور هوشمند پرش کرده و شیرجه می‌رود. در سطوح متوسط و سخت، برای گل زدن باید توپ را با کات یا شوت‌های دقیق به گوشه‌ها (سه جاف) هدایت کنید.</li>
         </ul>
         <button id="btn-close-help" class="btn-primary">متوجه شدم، بزن بریم! 👍</button>
       </div>
