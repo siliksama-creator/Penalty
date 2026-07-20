@@ -1,7 +1,7 @@
 /**
  * 2D Penalty Shootout Game (Android Touch & Web)
  * Full Persian UI & Landscape Widescreen Support
- * Engineered for GitHub Actions APK Build & Local Play
+ * Exact Visual Alignment with Uploaded Assets (field, goalkeeper #1, ball)
  */
 
 (function() {
@@ -89,7 +89,11 @@
 
   function initAudio() {
     if (!audioCtx && soundEnabled) {
-      audioCtx = new AudioContext();
+      try {
+        audioCtx = new AudioContext();
+      } catch (e) {
+        console.warn('AudioContext not supported or blocked');
+      }
     }
     if (audioCtx && audioCtx.state === 'suspended') {
       audioCtx.resume();
@@ -132,7 +136,6 @@
       osc.stop(now + 0.45);
     } 
     else if (type === 'kick') {
-      // White noise punch + deep kick sine
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.type = 'sine';
@@ -146,7 +149,6 @@
       osc.stop(now + 0.15);
     } 
     else if (type === 'goal') {
-      // Fanfare chord
       const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
       notes.forEach((freq, idx) => {
         const osc = audioCtx.createOscillator();
@@ -163,7 +165,6 @@
       });
     } 
     else if (type === 'save' || type === 'miss') {
-      // Deep thud
       const osc = audioCtx.createOscillator();
       const gain = audioCtx.createGain();
       osc.type = 'sawtooth';
@@ -197,13 +198,16 @@
   window.addEventListener('resize', resizeCanvas);
   resizeCanvas();
 
-  // World Coordinates & Geometry (Virtual Perspective Space)
-  // Field center top/bottom anchor points
+  // World Coordinates & Geometry (Exact Visual Alignment with field.png)
+  // In field.png (1536x1024):
+  // Top crossbar sits at y = 0.158 * ch (162px)
+  // Left post is at x = 0.158 * cw (243px), Right post at x = 0.837 * cw (1286px)
+  // Goal width is 0.679 * cw (1043px), height is 0.300 * ch (307px)
+  // Bottom goal line where posts hit grass is at y = 0.458 * ch (469px)
   function getGoalRect() {
-    // Goal posts in screen space coordinates
-    const goalCenterY = ch * 0.32;
-    const goalWidth = cw * 0.44;
-    const goalHeight = ch * 0.22;
+    const goalWidth = cw * 0.679;
+    const goalHeight = ch * 0.300;
+    const goalCenterY = ch * 0.458; // Goal line on grass
     return {
       x: (cw - goalWidth) / 2,
       y: goalCenterY - goalHeight,
@@ -245,9 +249,9 @@
     powerIndicator.style.display = 'none';
   }
 
-  // Goalkeeper Object
+  // Goalkeeper Object (#1 Green Monster)
   const goalie = {
-    x: 0,        // Offset from goal center
+    x: 0,        // Horizontal offset from goal center
     y: 0,        // Vertical offset from goal floor
     targetX: 0,  // Target dive location
     targetY: 0,
@@ -274,14 +278,13 @@
 
   function spawnTarget() {
     const gr = getGoalRect();
-    // Random position inside goal mouth
-    const pad = 35;
+    const pad = 45;
     const tx = gr.x + pad + Math.random() * (gr.w - pad * 2);
     const ty = gr.y + pad + Math.random() * (gr.h - pad * 2);
     targetsList.push({
       x: tx,
       y: ty,
-      radius: 25,
+      radius: 28,
       hit: false,
       pulse: Math.random() * Math.PI
     });
@@ -402,7 +405,6 @@
     const bPos = getBallScreenPos();
     const ballRadius = 65 * bPos.scale;
 
-    // Check if pointer down is near the ball
     const dist = Math.hypot(pos.x - bPos.x, pos.y - bPos.y);
     if (dist < ballRadius * 1.8) {
       isDragging = true;
@@ -418,12 +420,10 @@
     const pos = getPointerPos(e);
     swipePath.push(pos);
 
-    // Limit path length to last 35 points for smooth curve analysis
     if (swipePath.length > 35) {
       swipePath.shift();
     }
 
-    // Calculate dynamic power display based on swipe distance upwards
     const first = swipePath[0];
     const dy = first.y - pos.y;
     const powerPercent = Math.min(100, Math.max(0, Math.round((dy / (ch * 0.45)) * 100)));
@@ -445,14 +445,11 @@
     const dx = last.x - first.x;
     const dy = first.y - last.y; // Upward distance
 
-    // If swipe wasn't forward/upward enough, cancel kick
     if (dy < 40) {
       ball.state = 'IDLE';
       return;
     }
 
-    // Calculate curve / spin from trajectory curvature
-    // Calculate average horizontal deviation of middle points compared to straight line
     let totalCurvature = 0;
     if (swipePath.length > 5) {
       for (let i = 1; i < swipePath.length - 1; i++) {
@@ -464,12 +461,11 @@
       totalCurvature /= (swipePath.length - 2);
     }
 
-    // Kick parameters
     const power = Math.min(1.0, Math.max(0.3, dy / (ch * 0.45)));
-    ball.vz = 0.022 + power * 0.025; // Forward speed (reaches z=1 in ~25-40 frames)
-    ball.vx = (dx / (cw * 0.5)) * 16; // Horizontal aiming velocity
-    ball.vy = power * 14;             // Vertical elevation kick
-    ball.curve = (totalCurvature / cw) * 0.85; // Spin curl curve factor
+    ball.vz = 0.022 + power * 0.025;
+    ball.vx = (dx / (cw * 0.5)) * 16;
+    ball.vy = power * 14;
+    ball.curve = (totalCurvature / cw) * 0.85;
     ball.state = 'KICKED';
     ball.timer = 0;
 
@@ -477,7 +473,6 @@
     const bPos = getBallScreenPos();
     spawnGrassDust(bPos.x, bPos.y + 20);
 
-    // Trigger Goalkeeper AI Decision
     triggerGoalieAI();
   }
 
@@ -489,26 +484,21 @@
   function triggerGoalieAI() {
     const gr = getGoalRect();
     
-    // Predict where the ball will land at z=1 (goal line)
     const timeToGoal = (1.0 - ball.z) / (ball.vz || 0.03);
     let predictedX = ball.x + ball.vx * (timeToGoal * 0.6) + ball.curve * (timeToGoal * timeToGoal * 0.4);
     let predictedY = Math.max(0, Math.min(gr.h, ball.vy * 0.8));
 
-    // Add error tolerance based on difficulty level
     if (difficulty === 1) {
-      // Easy: Goalie often dives slightly off or reacts slow
       goalie.diveSpeed = 0.06;
       if (Math.random() < 0.45) {
-        predictedX *= -0.7; // Dive opposite side sometimes!
+        predictedX *= -0.7;
       } else {
         predictedX += (Math.random() - 0.5) * 180;
       }
     } else if (difficulty === 2) {
-      // Medium: Professional
       goalie.diveSpeed = 0.085;
       predictedX += (Math.random() - 0.5) * 80;
     } else {
-      // Hard: Fast reaction and tight precision
       goalie.diveSpeed = 0.11;
       predictedX += (Math.random() - 0.5) * 35;
     }
@@ -519,7 +509,6 @@
     goalie.timer = 0;
   }
 
-  // Show Banner Helper
   function showBanner(title, desc, type = 'goal') {
     bannerTitle.textContent = title;
     bannerDesc.textContent = desc;
@@ -529,83 +518,74 @@
     }, 2400);
   }
 
-  // Update Game Physics & State
   function updateGame() {
     if (!isPlaying) return;
 
-    // Update Targets if any
     targetsList.forEach(t => {
       t.pulse += 0.08;
     });
 
-    // Update Ball when KICKED
     if (ball.state === 'KICKED') {
       ball.z += ball.vz;
       ball.x += ball.vx;
-      ball.vx += ball.curve; // Magnus curve spin
+      ball.vx += ball.curve;
       ball.y += ball.vy;
       ball.vy -= 0.6; // Gravity
       if (ball.y < 0) {
         ball.y = 0;
-        ball.vy = -ball.vy * 0.45; // Bounce on grass
+        ball.vy = -ball.vy * 0.45;
       }
       ball.rot += 0.25;
 
-      // Update Goalie during DIVE
       if (goalie.state === 'DIVING') {
         goalie.x += (goalie.targetX - goalie.x) * goalie.diveSpeed;
         goalie.y += (goalie.targetY - goalie.y) * goalie.diveSpeed;
-        goalie.rot = (goalie.x / (cw * 0.2)) * 0.5; // Rotate body when diving sideways
+        goalie.rot = (goalie.x / (cw * 0.2)) * 0.4;
       }
 
-      // Check collision at Goal Line plane (z >= 0.94)
+      // Check collision when crossing goal plane (z >= 0.94)
       if (ball.z >= 0.94) {
         const gr = getGoalRect();
         const bScreen = getBallScreenPos();
 
-        // Check if goalie intercepted the ball
-        // Goalie bounding box in screen coordinates
         const goalieScreenX = gr.centerX + goalie.x;
-        const goalieScreenY = gr.centerY - goalie.y - 45;
+        const goalieScreenY = gr.centerY - goalie.y - 65;
         const goalieHitDist = Math.hypot(bScreen.x - goalieScreenX, bScreen.y - goalieScreenY);
 
-        // Goalie block threshold
-        const blockRadius = 110;
+        const blockRadius = 135; // Generous reach for monster goalie arms
 
         if (goalieHitDist < blockRadius && bScreen.y < gr.centerY + 30) {
           // SAVED BY GOALIE!
           ball.state = 'RESULT';
-          ball.vz = -0.015; // Bounce back
+          ball.vz = -0.015;
           ball.vx = (bScreen.x - goalieScreenX) * 0.15;
           ball.vy = 6;
           goalie.state = 'CELEBRATING';
           playSound('save');
-          showBanner('مهار شد! 🧤', 'دروازه‌بان با واکنشی عالی توپ را گرفت!', 'save');
+          showBanner('مهار شد! 🧤', 'دروازه‌بان غول‌پیکر با واکنش عالی توپ را گرفت!', 'save');
 
           handleRoundEnd('save');
         } 
         else {
-          // Check if ball is inside the goal posts
-          const isInsideWidth = bScreen.x > gr.x + 25 && bScreen.x < gr.x + gr.w - 25;
+          const isInsideWidth = bScreen.x > gr.x + 35 && bScreen.x < gr.x + gr.w - 35;
           const isInsideHeight = bScreen.y > gr.y + 15 && bScreen.y < gr.y + gr.h;
 
           if (isInsideWidth && isInsideHeight) {
             // GOAL!!
             ball.state = 'RESULT';
-            ball.vz = 0.005; // Hit net
+            ball.vz = 0.005;
             ball.vy = -2;
             goalie.state = 'DEJECTED';
             playSound('goal');
             spawnConfetti(bScreen.x, bScreen.y, 60);
             showBanner('گلل!! ⚽🔥', 'یک شوت بی‌نقص و تماشایی به تور نشست!', 'goal');
 
-            // Check if hit any Golden Target in target mode
             if (gameMode === 'target') {
               targetsList.forEach(t => {
                 if (!t.hit && Math.hypot(bScreen.x - t.x, bScreen.y - t.y) < t.radius + 40) {
                   t.hit = true;
                   targetsHit++;
-                  score += 250; // Bonus target points
+                  score += 250;
                   spawnConfetti(t.x, t.y, 30);
                 }
               });
@@ -615,10 +595,8 @@
             handleRoundEnd('goal');
           } 
           else {
-            // MISSED! (Hit post or went wide/over)
             ball.state = 'RESULT';
-            if (Math.abs(bScreen.x - gr.x) < 30 || Math.abs(bScreen.x - (gr.x + gr.w)) < 30) {
-              // Hit post
+            if (Math.abs(bScreen.x - gr.x) < 40 || Math.abs(bScreen.x - (gr.x + gr.w)) < 40) {
               playSound('save');
               ball.vx = -ball.vx * 0.8;
               showBanner('تیرک دروازه! 💥', 'توپ با اختلاف میلی‌متری به تیرک خورد!', 'save');
@@ -632,7 +610,6 @@
       }
     } 
     else if (ball.state === 'RESULT') {
-      // Continue bounce/roll after result
       ball.x += ball.vx;
       ball.y += ball.vy;
       ball.vy -= 0.5;
@@ -642,21 +619,18 @@
       }
       ball.timer++;
       if (ball.timer > 120) {
-        // Reset for next shot
         initRound();
       }
     } 
     else if (ball.state === 'IDLE') {
-      // Idle breathing for goalkeeper
       goalie.timer += 0.04;
-      goalie.x = Math.sin(goalie.timer) * 15;
+      goalie.x = Math.sin(goalie.timer) * 18;
       goalie.y = Math.abs(Math.sin(goalie.timer * 2)) * 6;
     }
 
     updateParticles();
   }
 
-  // Handle Scoring & Lives Update
   function handleRoundEnd(result) {
     if (result === 'goal') {
       goals++;
@@ -669,7 +643,6 @@
         localStorage.setItem('penalty_highscore', highscore);
       }
     } else {
-      // Save or miss
       if (gameMode === 'endless') {
         lives--;
         updateLivesDisplay();
@@ -735,11 +708,10 @@
   function drawGame() {
     ctx.clearRect(0, 0, cw, ch);
 
-    // 1. Draw Field Background
+    // 1. Draw Field Background (Exact 1536x1024 stadium view)
     if (images.field.complete && images.field.naturalWidth > 0) {
       ctx.drawImage(images.field, 0, 0, cw, ch);
     } else {
-      // Fallback green field
       const grad = ctx.createLinearGradient(0, 0, 0, ch);
       grad.addColorStop(0, '#1c4e20');
       grad.addColorStop(1, '#2c7a33');
@@ -747,7 +719,7 @@
       ctx.fillRect(0, 0, cw, ch);
     }
 
-    // 2. Draw Golden Targets (for Target Challenge Mode)
+    // 2. Draw Golden Targets (Target Challenge Mode)
     if (gameMode === 'target') {
       targetsList.forEach(t => {
         if (!t.hit) {
@@ -762,7 +734,6 @@
           ctx.lineWidth = 4;
           ctx.strokeStyle = '#ffffff';
           ctx.stroke();
-          // Star icon inside
           ctx.fillStyle = '#000000';
           ctx.font = 'bold 22px Vazirmatn, Tahoma';
           ctx.textAlign = 'center';
@@ -773,34 +744,33 @@
       });
     }
 
-    // 3. Draw Goalkeeper
+    // 3. Draw Goalkeeper (#1 Monster Goalie with Exact Natural Aspect Ratio 1224/713 = 1.716)
     const gr = getGoalRect();
     const gScreenX = gr.centerX + goalie.x;
-    const gScreenY = gr.centerY - goalie.y;
-    const gWidth = 260;
-    const gHeight = 240;
+    const gWidth = cw * 0.33;      // Exact visual span across goal width
+    const gHeight = gWidth / 1.716; // Exact proportion (1224x713) so character is never distorted!
+    const gScreenY = gr.centerY - gHeight + (ch * 0.02); // Feet resting right on the goal line grass
 
     ctx.save();
-    ctx.translate(gScreenX, gScreenY);
+    ctx.translate(gScreenX, gScreenY + gHeight / 2);
     ctx.rotate(goalie.rot);
     if (images.goalkeeper.complete && images.goalkeeper.naturalWidth > 0) {
-      ctx.drawImage(images.goalkeeper, -gWidth / 2, -gHeight + 40, gWidth, gHeight);
+      ctx.drawImage(images.goalkeeper, -gWidth / 2, -gHeight / 2, gWidth, gHeight);
     } else {
-      // Fallback rectangle
       ctx.fillStyle = '#3fb950';
-      ctx.fillRect(-60, -160, 120, 160);
+      ctx.fillRect(-gWidth / 2, -gHeight / 2, gWidth, gHeight);
     }
     ctx.restore();
 
-    // 4. Draw Ball Shadow & Ball Sprite
+    // 4. Draw Ball Shadow & Ball Sprite (#1 Pixel Art Soccer Ball)
     const bPos = getBallScreenPos();
-    const bSize = 130 * bPos.scale;
+    const bSize = (cw * 0.088) * bPos.scale;
 
-    // Shadow on grass
+    // Shadow on grass under the ball
     ctx.save();
     ctx.beginPath();
     ctx.ellipse(bPos.x, bPos.shadowY, (bSize * 0.45), (bSize * 0.18), 0, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.48)';
     ctx.fill();
     ctx.restore();
 
@@ -832,12 +802,11 @@
       ctx.lineWidth = 8;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      ctx.strokeStyle = 'rgba(88, 166, 255, 0.8)';
+      ctx.strokeStyle = 'rgba(88, 166, 255, 0.85)';
       ctx.shadowColor = '#58a6ff';
       ctx.shadowBlur = 15;
       ctx.stroke();
 
-      // Arrow head at current pointer
       const last = swipePath[swipePath.length - 1];
       ctx.beginPath();
       ctx.arc(last.x, last.y, 14, 0, Math.PI * 2);
